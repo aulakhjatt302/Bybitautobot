@@ -33,8 +33,7 @@ for channel, name in CHANNELS.items():
             print(f"⚠️ Bot OFF. Ignoring message from {channel_name}")
             return
 
-        print(f"📩 Message from {channel_name}:
-{event.message.text}")
+        print(f"📩 Message from {channel_name}:\n{event.message.text}")
         signal = parse_signal(event.message.text)
         print("🧠 Parsed signal:", signal)
 

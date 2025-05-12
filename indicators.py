@@ -1,15 +1,19 @@
 import requests
 import os
+from dotenv import load_dotenv
 
-TAAPI_KEY = os.getenv("TAAPI_KEY")
+load_dotenv()
+TAAPI_SECRET = os.getenv("TAAPI_SECRET")
 
 def check_indicators(symbol):
+    pair = symbol.replace("USDT", "/USDT")
+    url = f"https://api.taapi.io/rsi?secret={TAAPI_SECRET}&exchange=binance&symbol={pair}&interval=5m"
+    
     try:
-        url = f"https://api.taapi.io/rsi?secret={TAAPI_KEY}&exchange=binance&symbol={symbol}&interval=5m"
-        resp = requests.get(url).json()
-        rsi = resp.get("value", 50)
-        print(f"RSI = {rsi}")
-        return rsi < 70
+        r = requests.get(url)
+        rsi = r.json().get("value", 50)
+        print(f"📊 RSI = {rsi}")
+        return rsi < 70 if "LONG" in symbol else rsi > 30
     except Exception as e:
-        print("Indicator fallback:", e)
-        return True
+        print(f"❌ TAAPI error: {e}")
+        return False

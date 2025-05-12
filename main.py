@@ -2,6 +2,8 @@ from telethon import TelegramClient, events
 from telethon.errors import FloodWaitError
 import asyncio
 import os
+import sys
+import time
 from dotenv import load_dotenv
 from signal_parser import parse_signal
 from trade_manager import execute_trade
@@ -21,6 +23,7 @@ BYBIT_API_KEY = os.getenv("BYBIT_API_KEY")
 BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET")
 
 bot_enabled = True
+last_activity_time = time.time()
 
 # Initialize clients
 try:
@@ -47,6 +50,19 @@ def run_dummy_server():
     httpd = HTTPServer(server_address, DummyHandler)
     httpd.serve_forever()
 
+# Restart Bot
+def restart_program():
+    print("🔄 No activity detected for 3 minutes. Restarting bot...")
+    os.execv(sys.executable, ['python'] + sys.argv)
+
+# Auto Restart Checker
+async def auto_restart_checker():
+    global last_activity_time
+    while True:
+        await asyncio.sleep(30)
+        if time.time() - last_activity_time > 180:
+            restart_program()
+
 # Bot Handlers
 if client:
     CHANNELS = {
@@ -59,11 +75,12 @@ if client:
     for channel, name in CHANNELS.items():
         @client.on(events.NewMessage(chats=channel))
         async def signal_handler(event, channel_name=name):
-            global bot_enabled
+            global bot_enabled, last_activity_time
             if not bot_enabled:
                 print(f"⚠️ Bot OFF. Ignoring message from {channel_name}")
                 return
             try:
+                last_activity_time = time.time()
                 print(f"📩 Message from {channel_name}:\n{event.message.text}")
                 signal = parse_signal(event.message.text)
                 print("🧠 Parsed signal:", signal)
@@ -79,8 +96,9 @@ if client:
 
     @client.on(events.NewMessage(from_users=OWNER_ID))
     async def command_handler(event):
-        global bot_enabled
+        global bot_enabled, last_activity_time
         cmd = event.message.text.lower().strip()
+        last_activity_time = time.time()
 
         if cmd == "/on":
             bot_enabled = True
@@ -133,6 +151,7 @@ if __name__ == "__main__":
     if client:
         with client:
             client.loop.create_task(debug_log())
+            client.loop.create_task(auto_restart_checker())
             client.run_until_disconnected()
     else:
         print("❌ Bot cannot start due to FloodWaitError. Please wait and redeploy later.")

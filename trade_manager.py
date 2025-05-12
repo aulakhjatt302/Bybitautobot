@@ -1,8 +1,15 @@
 import os
 from pybit.unified_trading import HTTP
+from telethon.sync import TelegramClient
 
 BYBIT_API_KEY = os.getenv("BYBIT_API_KEY")
 BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET")
+API_ID = int(os.getenv("API_ID"))
+API_HASH = os.getenv("API_HASH")
+OWNER_ID = int(os.getenv("OWNER_ID"))
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+
+notify = TelegramClient("notify_session", API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
 session = HTTP(
     testnet=False,
@@ -10,23 +17,29 @@ session = HTTP(
     api_secret=BYBIT_API_SECRET
 )
 
-def execute_trade(signal):
-    symbol = signal['symbol']
-    side = signal['side'].upper()
-    qty = 25
-    leverage = 10
+async def execute_trade(signal):
+    try:
+        symbol = signal['symbol']
+        side = signal['side'].upper()
+        qty = 25
+        leverage = 10
 
-    # Set leverage
-    session.set_leverage(category="linear", symbol=symbol, buyLeverage=leverage, sellLeverage=leverage)
+        session.set_leverage(category="linear", symbol=symbol, buyLeverage=leverage, sellLeverage=leverage)
 
-    # Place order
-    order = session.place_order(
-        category="linear",
-        symbol=symbol,
-        side=side,
-        orderType="Market",
-        qty=qty,
-        timeInForce="GoodTillCancel"
-    )
+        order = session.place_order(
+            category="linear",
+            symbol=symbol,
+            side=side,
+            orderType="Market",
+            qty=qty,
+            timeInForce="GoodTillCancel"
+        )
 
-    print("Order response:", order)
+        msg = f"✅ Trade Placed:\n{symbol} | {side}\nQty: {qty}, Leverage: {leverage}"
+        await notify.send_message(OWNER_ID, msg)
+        print("✅ Trade placed and user notified.")
+
+    except Exception as e:
+        error_msg = f"❌ Trade Failed: {e}"
+        print(error_msg)
+        await notify.send_message(OWNER_ID, error_msg)

@@ -9,7 +9,6 @@ from indicators import check_indicators
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-# Load .env variables
 load_dotenv()
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
@@ -17,11 +16,8 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 OWNER_ID = int(os.getenv("OWNER_ID"))
 
 bot_enabled = True
-
-# Initialize Telegram client as bot
 client = TelegramClient("bot_session", API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
-# Define channels to monitor
 CHANNELS = {
     '@Binance_pump_Crypto_Future': 'Group 1',
     '@binance_360': 'Group 2',
@@ -29,7 +25,6 @@ CHANNELS = {
     '@crptobserver': 'Group 4',
 }
 
-# Message handler for each channel
 for channel, name in CHANNELS.items():
     @client.on(events.NewMessage(chats=channel))
     async def signal_handler(event, channel_name=name):
@@ -38,19 +33,19 @@ for channel, name in CHANNELS.items():
             print(f"⚠️ Bot OFF. Ignoring message from {channel_name}")
             return
 
-        print(f"\n📩 Message from {channel_name}:\n{event.message.text}")
+        print(f"📩 Message from {channel_name}:
+{event.message.text}")
         signal = parse_signal(event.message.text)
         print("🧠 Parsed signal:", signal)
 
         if check_indicators(signal['symbol']):
             print("✅ Indicators OK. Executing trade...")
-            execute_trade(signal)
-            await event.reply("✅ Trade executed.")
+            await execute_trade(signal)
         else:
-            print("❌ Indicators not favorable. Skipping trade.")
-            await event.reply("⚠️ Market conditions not safe. Trade skipped.")
+            msg = f"⚠️ Indicators not favorable for {signal['symbol']}. Trade skipped."
+            await client.send_message(OWNER_ID, msg)
+            print(msg)
 
-# Owner control commands
 @client.on(events.NewMessage(from_users=OWNER_ID))
 async def command_handler(event):
     global bot_enabled
@@ -66,7 +61,6 @@ async def command_handler(event):
     else:
         await event.respond("Use /on, /off, or /status")
 
-# Dummy HTTP server to keep Render free service alive
 class DummyHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -78,13 +72,11 @@ def run_dummy_server():
     httpd = HTTPServer(server_address, DummyHandler)
     httpd.serve_forever()
 
-# Print log every 30 sec
 async def debug_log():
     while True:
         print("👂 Bot is running... waiting for signals & commands...")
         await asyncio.sleep(30)
 
-# Start
 if __name__ == "__main__":
     threading.Thread(target=run_dummy_server, daemon=True).start()
     with client:

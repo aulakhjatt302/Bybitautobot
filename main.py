@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from signal_parser import parse_signal
 from trade_manager import execute_trade
 from indicators import check_indicators
-
+from pybit.unified_trading import HTTP
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -17,17 +17,25 @@ API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OWNER_ID = int(os.getenv("OWNER_ID"))
+BYBIT_API_KEY = os.getenv("BYBIT_API_KEY")
+BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET")
 
 bot_enabled = True
 
-# Try creating Telegram Client safely
+# Initialize clients
 try:
     client = TelegramClient("bot_session", API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 except FloodWaitError as e:
-    print(f"⚠️ FloodWaitError: Need to wait {e.seconds} seconds before bot login.")
+    print(f"⚠️ FloodWaitError: Wait for {e.seconds} seconds before bot login.")
     client = None
 
-# Dummy HTTP Server to keep Render happy
+bybit_client = HTTP(
+    api_key=BYBIT_API_KEY,
+    api_secret=BYBIT_API_SECRET,
+    testnet=False
+)
+
+# Dummy HTTP Server
 class DummyHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -39,9 +47,8 @@ def run_dummy_server():
     httpd = HTTPServer(server_address, DummyHandler)
     httpd.serve_forever()
 
-# Bot Command and Signal Handlers
+# Bot Handlers
 if client:
-    # Channels
     CHANNELS = {
         '@Binance_pump_Crypto_Future': 'Group 1',
         '@binance_360': 'Group 2',
@@ -56,7 +63,6 @@ if client:
             if not bot_enabled:
                 print(f"⚠️ Bot OFF. Ignoring message from {channel_name}")
                 return
-
             print(f"📩 Message from {channel_name}:\n{event.message.text}")
             signal = parse_signal(event.message.text)
             print("🧠 Parsed signal:", signal)
@@ -65,14 +71,13 @@ if client:
                 print("✅ Indicators OK. Executing trade...")
                 await execute_trade(signal)
             else:
-                msg = f"⚠️ Indicators not favorable for {signal['symbol']}. Trade skipped."
-                await client.send_message(OWNER_ID, msg)
-                print(msg)
+                print(f"⚠️ Indicators not favorable for {signal['symbol']}. Trade skipped.")
 
     @client.on(events.NewMessage(from_users=OWNER_ID))
     async def command_handler(event):
         global bot_enabled
         cmd = event.message.text.lower().strip()
+
         if cmd == "/on":
             bot_enabled = True
             await event.respond("✅ Bot turned ON.")
@@ -81,15 +86,33 @@ if client:
             await event.respond("⛔ Bot turned OFF.")
         elif cmd == "/status":
             await event.respond(f"ℹ️ Bot is {'ON' if bot_enabled else 'OFF'}.")
+        elif cmd == "/balance":
+            balance_info = bybit_client.get_wallet_balance(accountType="UNIFIED")
+            usdt_balance = balance_info['result']['list'][0]['coin'][0]['availableToWithdraw']
+            await event.respond(f"💰 Wallet Balance: {usdt_balance} USDT")
+        elif cmd == "/openpositions":
+            positions = bybit_client.get_positions(category="linear")['result']['list']
+            if positions:
+                msg = "🪙 Open Positions:\n"
+                for p in positions:
+                    if float(p['size']) > 0:
+                        side = p['side']
+                        qty = p['size']
+                        entry = p['avgEntryPrice']
+                        symbol = p['symbol']
+                        msg += f"- {symbol} {side}: {qty} Qty, Entry: {entry}\n"
+                await event.respond(msg)
+            else:
+                await event.respond("📭 No Open Positions.")
         else:
-            await event.respond("Use /on, /off, or /status")
+            await event.respond("ℹ️ Available Commands:\n/on\n/off\n/status\n/balance\n/openpositions")
 
     async def debug_log():
         while True:
             print("👂 Bot is running... waiting for signals & commands...")
             await asyncio.sleep(30)
 
-# Start Server and Bot
+# Start Everything
 if __name__ == "__main__":
     threading.Thread(target=run_dummy_server, daemon=True).start()
 

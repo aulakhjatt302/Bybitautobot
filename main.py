@@ -12,7 +12,6 @@ from pybit.unified_trading import HTTP
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-# Load environment variables
 load_dotenv()
 
 API_ID = int(os.getenv("API_ID"))
@@ -21,11 +20,11 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 OWNER_ID = int(os.getenv("OWNER_ID"))
 BYBIT_API_KEY = os.getenv("BYBIT_API_KEY")
 BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET")
+TAAPI_SECRET = os.getenv("TAAPI_SECRET")
 
 bot_enabled = True
 last_activity_time = time.time()
 
-# Initialize clients
 try:
     client = TelegramClient("bot_session", API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 except FloodWaitError as e:
@@ -38,7 +37,6 @@ bybit_client = HTTP(
     testnet=False
 )
 
-# Dummy HTTP Server
 class DummyHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -46,16 +44,16 @@ class DummyHandler(BaseHTTPRequestHandler):
         self.wfile.write(b"Bot is running (dummy server)!")
 
 def run_dummy_server():
-    server_address = ('', 10000)
+    PORT = int(os.environ.get("PORT", 10000))
+    server_address = ('', PORT)
     httpd = HTTPServer(server_address, DummyHandler)
+    print(f"✅ Dummy HTTP Server running on port {PORT}")
     httpd.serve_forever()
 
-# Restart Bot
 def restart_program():
-    print("🔄 No activity detected for 3 minutes. Restarting bot...")
+    print("🔄 Restarting bot due to inactivity...")
     os.execv(sys.executable, ['python'] + sys.argv)
 
-# Auto Restart Checker
 async def auto_restart_checker():
     global last_activity_time
     while True:
@@ -63,7 +61,6 @@ async def auto_restart_checker():
         if time.time() - last_activity_time > 180:
             restart_program()
 
-# Bot Handlers
 if client:
     CHANNELS = {
         '@Binance_pump_Crypto_Future': 'Group 1',
@@ -85,14 +82,14 @@ if client:
                 signal = parse_signal(event.message.text)
                 print("🧠 Parsed signal:", signal)
 
-                if check_indicators(signal['symbol']):
+                safe = check_indicators(signal['symbol'])
+                if safe:
                     print("✅ Indicators OK. Executing trade...")
                     await execute_trade(signal)
                 else:
                     print(f"⚠️ Indicators not favorable for {signal['symbol']}. Trade skipped.")
-
             except Exception as e:
-                print(f"❌ Error during signal handling: {str(e)}")
+                print(f"❌ Error in signal_handler: {e}")
 
     @client.on(events.NewMessage(from_users=OWNER_ID))
     async def command_handler(event):
@@ -102,56 +99,47 @@ if client:
 
         if cmd == "/on":
             bot_enabled = True
-            await event.respond("✅ Bot turned ON.")
+            await event.respond("✅ Bot is ON.")
         elif cmd == "/off":
             bot_enabled = False
-            await event.respond("⛔ Bot turned OFF.")
+            await event.respond("⛔ Bot is OFF.")
         elif cmd == "/status":
             await event.respond(f"ℹ️ Bot is {'ON' if bot_enabled else 'OFF'}.")
         elif cmd == "/balance":
             try:
                 balance_info = bybit_client.get_wallet_balance(accountType="UNIFIED")
-                usdt_info = balance_info['result']['list'][0]['coin']
-                for coin in usdt_info:
-                    if coin['coin'] == "USDT":
-                        available_balance = coin['availableToWithdraw']
-                        break
-                await event.respond(f"💰 Wallet Balance: {available_balance} USDT")
+                usdt = next((coin for coin in balance_info['result']['list'][0]['coin'] if coin['coin'] == "USDT"), {})
+                await event.respond(f"💰 Wallet Balance: {usdt.get('availableToWithdraw', 'N/A')} USDT")
             except Exception as e:
-                await event.respond(f"❌ Error fetching balance: {str(e)}")
+                await event.respond(f"❌ Error: {e}")
         elif cmd == "/openpositions":
             try:
                 positions = bybit_client.get_positions(category="linear")['result']['list']
-                if positions:
-                    msg = "🪙 Open Positions:\n"
-                    for p in positions:
-                        if float(p['size']) > 0:
-                            side = p['side']
-                            qty = p['size']
-                            entry = p['avgEntryPrice']
-                            symbol = p['symbol']
-                            msg += f"- {symbol} {side}: {qty} Qty, Entry: {entry}\n"
-                    await event.respond(msg)
-                else:
-                    await event.respond("📭 No Open Positions.")
+                msg = "📊 Open Positions:\n"
+                found = False
+                for p in positions:
+                    if float(p['size']) > 0:
+                        found = True
+                        msg += f"- {p['symbol']} {p['side']}: {p['size']} @ {p['avgEntryPrice']}\n"
+                if not found:
+                    msg = "📭 No open positions."
+                await event.respond(msg)
             except Exception as e:
-                await event.respond(f"❌ Error fetching open positions: {str(e)}")
+                await event.respond(f"❌ Error: {e}")
         else:
-            await event.respond("ℹ️ Available Commands:\n/on\n/off\n/status\n/balance\n/openpositions")
+            await event.respond("Commands: /on /off /status /balance /openpositions")
 
     async def debug_log():
         while True:
             print("👂 Bot is running... waiting for signals & commands...")
             await asyncio.sleep(30)
 
-# Start Everything
 if __name__ == "__main__":
     threading.Thread(target=run_dummy_server, daemon=True).start()
-
     if client:
         with client:
             client.loop.create_task(debug_log())
             client.loop.create_task(auto_restart_checker())
             client.run_until_disconnected()
     else:
-        print("❌ Bot cannot start due to FloodWaitError. Please wait and redeploy later.")
+        print("❌ Telegram client not initialized.")

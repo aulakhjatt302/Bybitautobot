@@ -63,15 +63,19 @@ if client:
             if not bot_enabled:
                 print(f"⚠️ Bot OFF. Ignoring message from {channel_name}")
                 return
-            print(f"📩 Message from {channel_name}:\n{event.message.text}")
-            signal = parse_signal(event.message.text)
-            print("🧠 Parsed signal:", signal)
+            try:
+                print(f"📩 Message from {channel_name}:\n{event.message.text}")
+                signal = parse_signal(event.message.text)
+                print("🧠 Parsed signal:", signal)
 
-            if check_indicators(signal['symbol']):
-                print("✅ Indicators OK. Executing trade...")
-                await execute_trade(signal)
-            else:
-                print(f"⚠️ Indicators not favorable for {signal['symbol']}. Trade skipped.")
+                if check_indicators(signal['symbol']):
+                    print("✅ Indicators OK. Executing trade...")
+                    await execute_trade(signal)
+                else:
+                    print(f"⚠️ Indicators not favorable for {signal['symbol']}. Trade skipped.")
+
+            except Exception as e:
+                print(f"❌ Error during signal handling: {str(e)}")
 
     @client.on(events.NewMessage(from_users=OWNER_ID))
     async def command_handler(event):
@@ -87,23 +91,33 @@ if client:
         elif cmd == "/status":
             await event.respond(f"ℹ️ Bot is {'ON' if bot_enabled else 'OFF'}.")
         elif cmd == "/balance":
-            balance_info = bybit_client.get_wallet_balance(accountType="UNIFIED")
-            usdt_balance = balance_info['result']['list'][0]['coin'][0]['availableToWithdraw']
-            await event.respond(f"💰 Wallet Balance: {usdt_balance} USDT")
+            try:
+                balance_info = bybit_client.get_wallet_balance(accountType="UNIFIED")
+                usdt_info = balance_info['result']['list'][0]['coin']
+                for coin in usdt_info:
+                    if coin['coin'] == "USDT":
+                        available_balance = coin['availableToWithdraw']
+                        break
+                await event.respond(f"💰 Wallet Balance: {available_balance} USDT")
+            except Exception as e:
+                await event.respond(f"❌ Error fetching balance: {str(e)}")
         elif cmd == "/openpositions":
-            positions = bybit_client.get_positions(category="linear")['result']['list']
-            if positions:
-                msg = "🪙 Open Positions:\n"
-                for p in positions:
-                    if float(p['size']) > 0:
-                        side = p['side']
-                        qty = p['size']
-                        entry = p['avgEntryPrice']
-                        symbol = p['symbol']
-                        msg += f"- {symbol} {side}: {qty} Qty, Entry: {entry}\n"
-                await event.respond(msg)
-            else:
-                await event.respond("📭 No Open Positions.")
+            try:
+                positions = bybit_client.get_positions(category="linear")['result']['list']
+                if positions:
+                    msg = "🪙 Open Positions:\n"
+                    for p in positions:
+                        if float(p['size']) > 0:
+                            side = p['side']
+                            qty = p['size']
+                            entry = p['avgEntryPrice']
+                            symbol = p['symbol']
+                            msg += f"- {symbol} {side}: {qty} Qty, Entry: {entry}\n"
+                    await event.respond(msg)
+                else:
+                    await event.respond("📭 No Open Positions.")
+            except Exception as e:
+                await event.respond(f"❌ Error fetching open positions: {str(e)}")
         else:
             await event.respond("ℹ️ Available Commands:\n/on\n/off\n/status\n/balance\n/openpositions")
 

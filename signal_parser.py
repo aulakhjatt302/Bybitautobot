@@ -1,40 +1,32 @@
 import re
 
 def parse_signal(message):
-    data = {}
-    message = message.lower()
-    lines = message.splitlines()
+    message = message.upper()
+    side = "LONG" if "LONG" in message else "SHORT"
 
-    for line in lines:
-        line = line.strip()
+    # Symbol
+    match_symbol = re.search(r"#?([A-Z]+)[\/\-]USDT", message)
+    symbol = match_symbol.group(1) + "USDT" if match_symbol else None
 
-        # Side (LONG or SHORT)
-        if "long" in line:
-            data["side"] = "LONG"
-        elif "short" in line:
-            data["side"] = "SHORT"
+    # Entry zone
+    match_entry = re.search(r"ENTRY.*?[:\-–]\s*([\d\.]+)(?:\s*[-TO]+\s*([\d\.]+))?", message)
+    if match_entry:
+        entry_from = float(match_entry.group(1))
+        entry_to = float(match_entry.group(2)) if match_entry.group(2) else entry_from
+    else:
+        entry_from = entry_to = None
 
-        # Symbol
-        if "#" in line and "/usdt" in line:
-            symbol_raw = line.replace("#", "").replace("/", "").replace("usdt", "").strip().upper()
-            data["symbol"] = symbol_raw + "USDT"
+    # Stop loss
+    match_sl = re.search(r"STOP ?LOSS.*?[:\-–]\s*([\d\.]+)", message)
+    stop_loss = float(match_sl.group(1)) if match_sl else None
 
-        # Entry zone
-        if "entry" in line:
-            entry_match = re.findall(r"([0-9.]+)", line)
-            if entry_match:
-                data["entry"] = float(entry_match[0])  # First price from entry zone
+    # Targets (all numbers after "Target" or "TP")
+    targets = [float(tp) for tp in re.findall(r"(?:TP\d*|TARGET\d*|🎯|🥇|🥈|🥉)[:\-–]?\s*\$?([\d\.]+)", message)]
 
-        # Stop Loss
-        if "sl" in line or "stop" in line:
-            sl_match = re.findall(r"([0-9.]+)", line)
-            if sl_match:
-                data["sl"] = float(sl_match[0])
-
-        # Targets
-        if "target" in line or "tp" in line:
-            targets = re.findall(r"([0-9.]+)", line)
-            if targets:
-                data["tp"] = [float(t) for t in targets]
-
-    return data
+    return {
+        "symbol": symbol,
+        "side": side,
+        "entry": (entry_from + entry_to)/2 if entry_from and entry_to else None,
+        "stop_loss": stop_loss,
+        "targets": targets[:2]  # Only first 2 targets for trade exit logic
+    }

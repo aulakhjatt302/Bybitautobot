@@ -1,16 +1,11 @@
 from telethon import TelegramClient, events
 from telethon.errors import FloodWaitError
-import asyncio
-import os
-import sys
-import time
+import asyncio, os, sys, time
 from dotenv import load_dotenv
 from signal_parser import parse_signal
 from trade_manager import execute_trade
 from indicators import check_indicators
 from pybit.unified_trading import HTTP
-import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
 
 load_dotenv()
 
@@ -28,30 +23,13 @@ last_activity_time = time.time()
 try:
     client = TelegramClient("bot_session", API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 except FloodWaitError as e:
-    print(f"⚠️ FloodWaitError: Wait for {e.seconds} seconds before bot login.")
+    print(f"FloodWaitError: Wait {e.seconds} seconds")
     client = None
 
-bybit_client = HTTP(
-    api_key=BYBIT_API_KEY,
-    api_secret=BYBIT_API_SECRET,
-    testnet=False
-)
-
-class DummyHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Bot is running (dummy server)!")
-
-def run_dummy_server():
-    PORT = int(os.environ.get("PORT", 10000))
-    server_address = ('', PORT)
-    httpd = HTTPServer(server_address, DummyHandler)
-    print(f"✅ Dummy HTTP Server running on port {PORT}")
-    httpd.serve_forever()
+bybit_client = HTTP(api_key=BYBIT_API_KEY, api_secret=BYBIT_API_SECRET, testnet=False)
 
 def restart_program():
-    print("🔄 Restarting bot due to inactivity...")
+    print("Restarting bot after 3 minutes of inactivity...")
     os.execv(sys.executable, ['python'] + sys.argv)
 
 async def auto_restart_checker():
@@ -74,72 +52,48 @@ if client:
         async def signal_handler(event, channel_name=name):
             global bot_enabled, last_activity_time
             if not bot_enabled:
-                print(f"⚠️ Bot OFF. Ignoring message from {channel_name}")
                 return
             try:
                 last_activity_time = time.time()
-                print(f"📩 Message from {channel_name}:\n{event.message.text}")
-                signal = parse_signal(event.message.text)
-                print("🧠 Parsed signal:", signal)
-
-                safe = check_indicators(signal['symbol'])
-                if safe:
-                    print("✅ Indicators OK. Executing trade...")
+                print(f"Signal from {channel_name}:\n{event.text}")
+                signal = parse_signal(event.text)
+                if check_indicators(signal['symbol']):
                     await execute_trade(signal)
-                else:
-                    print(f"⚠️ Indicators not favorable for {signal['symbol']}. Trade skipped.")
             except Exception as e:
-                print(f"❌ Error in signal_handler: {e}")
+                print(f"Error in signal_handler: {e}")
 
     @client.on(events.NewMessage(from_users=OWNER_ID))
     async def command_handler(event):
         global bot_enabled, last_activity_time
-        cmd = event.message.text.lower().strip()
+        cmd = event.text.lower().strip()
         last_activity_time = time.time()
 
-        if cmd == "/on":
-            bot_enabled = True
-            await event.respond("✅ Bot is ON.")
-        elif cmd == "/off":
-            bot_enabled = False
-            await event.respond("⛔ Bot is OFF.")
-        elif cmd == "/status":
-            await event.respond(f"ℹ️ Bot is {'ON' if bot_enabled else 'OFF'}.")
-        elif cmd == "/balance":
-            try:
-                balance_info = bybit_client.get_wallet_balance(accountType="UNIFIED")
-                usdt = next((coin for coin in balance_info['result']['list'][0]['coin'] if coin['coin'] == "USDT"), {})
-                await event.respond(f"💰 Wallet Balance: {usdt.get('availableToWithdraw', 'N/A')} USDT")
-            except Exception as e:
-                await event.respond(f"❌ Error: {e}")
-        elif cmd == "/openpositions":
-            try:
-                positions = bybit_client.get_positions(category="linear")['result']['list']
-                msg = "📊 Open Positions:\n"
-                found = False
-                for p in positions:
-                    if float(p['size']) > 0:
-                        found = True
-                        msg += f"- {p['symbol']} {p['side']}: {p['size']} @ {p['avgEntryPrice']}\n"
-                if not found:
-                    msg = "📭 No open positions."
-                await event.respond(msg)
-            except Exception as e:
-                await event.respond(f"❌ Error: {e}")
-        else:
-            await event.respond("Commands: /on /off /status /balance /openpositions")
+        try:
+            if cmd == "/on":
+                bot_enabled = True
+                await event.respond("✅ Bot ON")
+            elif cmd == "/off":
+                bot_enabled = False
+                await event.respond("⛔ Bot OFF")
+            elif cmd == "/status":
+                await event.respond(f"Bot is {'ON' if bot_enabled else 'OFF'}")
+            elif cmd == "/balance":
+                await event.respond("❌ Balance not available due to Bybit IP restriction.")
+            elif cmd == "/openpositions":
+                await event.respond("❌ Open Positions not supported on current IP.")
+            else:
+                await event.respond("/on /off /status")
+        except Exception as e:
+            await event.respond(f"❌ Error: {e}")
 
-    async def debug_log():
+    async def heartbeat():
         while True:
-            print("👂 Bot is running... waiting for signals & commands...")
-            await asyncio.sleep(30)
+            print("Bot running... waiting for signals...")
+            await asyncio.sleep(60)
 
 if __name__ == "__main__":
-    threading.Thread(target=run_dummy_server, daemon=True).start()
     if client:
         with client:
-            client.loop.create_task(debug_log())
             client.loop.create_task(auto_restart_checker())
+            client.loop.create_task(heartbeat())
             client.run_until_disconnected()
-    else:
-        print("❌ Telegram client not initialized.")

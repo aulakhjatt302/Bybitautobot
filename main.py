@@ -6,6 +6,8 @@ from signal_parser import parse_signal
 from trade_manager import execute_trade
 from indicators import check_indicators
 from pybit.unified_trading import HTTP
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import threading
 
 load_dotenv()
 
@@ -27,6 +29,23 @@ except FloodWaitError as e:
     client = None
 
 bybit_client = HTTP(api_key=BYBIT_API_KEY, api_secret=BYBIT_API_SECRET, testnet=False)
+
+class DummyHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is running (dummy server)!")
+
+    def do_HEAD(self):
+        self.send_response(200)
+        self.end_headers()
+
+def run_dummy_server():
+    PORT = int(os.environ.get("PORT", 10000))
+    server_address = ('', PORT)
+    httpd = HTTPServer(server_address, DummyHandler)
+    print(f"✅ Dummy HTTP Server running on port {PORT}")
+    httpd.serve_forever()
 
 def restart_program():
     print("Restarting bot after 3 minutes of inactivity...")
@@ -92,6 +111,7 @@ if client:
             await asyncio.sleep(60)
 
 if __name__ == "__main__":
+    threading.Thread(target=run_dummy_server, daemon=True).start()
     if client:
         with client:
             client.loop.create_task(auto_restart_checker())

@@ -1,32 +1,38 @@
 import re
 
 def parse_signal(message):
-    message = message.upper()
-    side = "LONG" if "LONG" in message else "SHORT"
+    signal = {}
 
-    # Symbol
-    match_symbol = re.search(r"#?([A-Z]+)[\/\-]USDT", message)
-    symbol = match_symbol.group(1) + "USDT" if match_symbol else None
+    # ✅ Symbol detection (e.g. #BOME/USDT)
+    symbol_match = re.search(r'#?([A-Z0-9]{2,})[\/\-]?(USDT)', message, re.IGNORECASE)
+    if symbol_match:
+        signal['symbol'] = (symbol_match.group(1) + symbol_match.group(2)).upper()
 
-    # Entry zone
-    match_entry = re.search(r"ENTRY.*?[:\-–]\s*([\d\.]+)(?:\s*[-TO]+\s*([\d\.]+))?", message)
-    if match_entry:
-        entry_from = float(match_entry.group(1))
-        entry_to = float(match_entry.group(2)) if match_entry.group(2) else entry_from
-    else:
-        entry_from = entry_to = None
+    # ✅ Trade direction
+    if 'short' in message.lower():
+        signal['side'] = 'SELL'
+    elif 'long' in message.lower():
+        signal['side'] = 'BUY'
 
-    # Stop loss
-    match_sl = re.search(r"STOP ?LOSS.*?[:\-–]\s*([\d\.]+)", message)
-    stop_loss = float(match_sl.group(1)) if match_sl else None
+    # ✅ Entry price (single or range)
+    entry_match = re.search(r'Entry[:=]?\s*\$?([\d.]+)(?:\s*-\s*\$?([\d.]+))?', message, re.IGNORECASE)
+    if entry_match:
+        if entry_match.group(2):
+            entry_price = (float(entry_match.group(1)) + float(entry_match.group(2))) / 2
+        else:
+            entry_price = float(entry_match.group(1))
+        signal['entry'] = round(entry_price, 6)
 
-    # Targets (all numbers after "Target" or "TP")
-    targets = [float(tp) for tp in re.findall(r"(?:TP\d*|TARGET\d*|🎯|🥇|🥈|🥉)[:\-–]?\s*\$?([\d\.]+)", message)]
+    # ✅ Stop loss
+    sl_match = re.search(r'SL[:=]?\s*\$?([\d.]+)|Stop[- ]?loss[:=]?\s*\$?([\d.]+)', message, re.IGNORECASE)
+    if sl_match:
+        sl = sl_match.group(1) or sl_match.group(2)
+        signal['sl'] = float(sl)
 
-    return {
-        "symbol": symbol,
-        "side": side,
-        "entry": (entry_from + entry_to)/2 if entry_from and entry_to else None,
-        "stop_loss": stop_loss,
-        "targets": targets[:2]  # Only first 2 targets for trade exit logic
-    }
+    # ✅ Target (at least TP1)
+    tp_match = re.findall(r'(TP\d?|Target\d?)[:=]?\s*\$?([\d.]+)', message, re.IGNORECASE)
+    if tp_match:
+        tps = [float(tp[1]) for tp in tp_match[:2]]  # only up to TP2
+        signal['tp'] = tps
+
+    return signal

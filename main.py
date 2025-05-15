@@ -19,19 +19,17 @@ OWNER_ID = int(os.getenv("OWNER_ID"))
 
 bot_enabled = True
 
-# Start Telegram client
 client = TelegramClient("bot_session", API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
-# ✅ All Telegram groups to monitor
 CHANNELS = {
     '@Binance_pump_Crypto_Future': 'Group 1',
     '@binance_360': 'Group 2',
     '@cryptoleaopards': 'Group 3',
     '@crptobserver': 'Group 4',
-    '@mysigalgroup': 'Test Group'  # ✅ Your new public group added here
+    '@mysigalgroup': 'Test Group'  # ✅ आपका public group
 }
 
-# ✅ DEBUG logger — print every incoming message + chat ID
+# ✅ Debug: सभी messages log में
 @client.on(events.NewMessage())
 async def debug_logger(event):
     try:
@@ -41,7 +39,7 @@ async def debug_logger(event):
     except Exception as e:
         print("❌ Error in debug_logger:", e)
 
-# ✅ Handler for signal messages
+# ✅ Signal handler per group
 for channel, name in CHANNELS.items():
     @client.on(events.NewMessage(chats=channel))
     async def signal_handler(event, channel_name=name):
@@ -56,6 +54,11 @@ for channel, name in CHANNELS.items():
         signal = parse_signal(event.message.text)
         print("🧠 Parsed Signal:", signal)
 
+        # ✅ Check: Signal must have symbol to proceed
+        if 'symbol' not in signal:
+            print("❌ No symbol in parsed signal. Skipping.")
+            return
+
         if check_indicators(signal['symbol']):
             print("✅ Indicators OK. Executing trade...")
             await execute_trade(signal)
@@ -64,7 +67,7 @@ for channel, name in CHANNELS.items():
             await client.send_message(OWNER_ID, msg)
             print(msg)
 
-# ✅ Telegram bot commands: /on /off /status
+# ✅ Telegram commands
 @client.on(events.NewMessage(from_users=OWNER_ID))
 async def command_handler(event):
     global bot_enabled
@@ -80,7 +83,7 @@ async def command_handler(event):
     else:
         await event.respond("Use: /on /off /status")
 
-# ✅ HTTP server for Render (avoid port error)
+# ✅ Dummy HTTP Server for Render
 class DummyHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -96,13 +99,13 @@ def run_dummy_server():
     httpd = HTTPServer(server_address, DummyHandler)
     httpd.serve_forever()
 
-# ✅ Debug heartbeat every 30 seconds
+# ✅ Debug heartbeat log
 async def debug_log():
     while True:
         print("👂 Bot is running and listening...")
         await asyncio.sleep(30)
 
-# ✅ Main run
+# ✅ Main bot start
 if __name__ == "__main__":
     threading.Thread(target=run_dummy_server, daemon=True).start()
     with client:
